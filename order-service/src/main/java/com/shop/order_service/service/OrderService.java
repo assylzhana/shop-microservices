@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.Arrays;
 import java.util.List;
@@ -25,39 +26,44 @@ public class OrderService {
 
     private final WebClient.Builder webClientBuilder;
 
-    public void placeOrder(OrderRequest orderRequest){
+    public void placeOrder(OrderRequest orderRequest) {
         Order order = new Order();
         order.setOrderNumber(UUID.randomUUID().toString());
         List<OrderLineItems> orderLineItems = orderRequest.getOrderLineItemsDtoList()
                 .stream()
-                .map(this::mapDto).toList();
+                .map(this::mapDto)
+                .toList();
         order.setOrderLineItemsList(orderLineItems);
 
         List<String> skuCodes = order.getOrderLineItemsList()
                 .stream()
-                .map(orderLineItem -> orderLineItem.getSkuCode())
+                .map(OrderLineItems::getSkuCode)
                 .toList();
-        //hereeeeeeee!!!
-        //InventoryService suda , i dobavlyaem zakaz esli product is in
-        InventoryResponse[] inventoryResponseArray = webClientBuilder.build().get()
-                .uri("http://inventory-service/api/inventory", uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
-                .retrieve()
-                .bodyToMono(InventoryResponse[].class)
-                .block();
+
+        InventoryResponse[] inventoryResponseArray;
+
+        try {
+            inventoryResponseArray = webClientBuilder.build().get()
+                    .uri("http://inventory-service/api/inventory", uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
+                    .retrieve()
+                    .bodyToMono(InventoryResponse[].class)
+                    .block();
+        } catch (WebClientResponseException e) {
+            throw new IllegalStateException("Inventory service is unavailable, please try again later", e);
+        }
 
         boolean allProductsInStock = Arrays.stream(inventoryResponseArray)
                 .allMatch(InventoryResponse::isInStock);
 
-        if(allProductsInStock){
+        if (allProductsInStock) {
             orderRepository.save(order);
-        }
-        else {
+        } else {
             throw new IllegalArgumentException("Product is not in stock, please try again later");
         }
     }
 
     private OrderLineItems mapDto(OrderLineItemsDto orderLineItemsDto) {
-        OrderLineItems orderLineItems =new OrderLineItems();
+        OrderLineItems orderLineItems = new OrderLineItems();
         orderLineItems.setPrice(orderLineItemsDto.getPrice());
         orderLineItems.setQuantity(orderLineItemsDto.getQuantity());
         orderLineItems.setSkuCode(orderLineItemsDto.getSkuCode());
