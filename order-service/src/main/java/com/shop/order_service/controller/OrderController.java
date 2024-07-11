@@ -23,7 +23,6 @@ public class OrderController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @CircuitBreaker(name = "inventory", fallbackMethod = "fallbackMethod")
-    @TimeLimiter(name = "inventory")
     public String placeOrder(@RequestBody OrderRequest orderRequest) {
             orderService.placeOrder(orderRequest);
             return "Order placed successfully";
